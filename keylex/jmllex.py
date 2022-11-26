@@ -16,14 +16,14 @@ class JMLLexer(Lexer):
     filenames = ['*.java', '*.jml']
 
     def __init__(self, **options) -> None:
+        active_keys = options.get("active-keys", list())
+        self.conditional_checker = JmlConditionalChecker(active_keys)
         super().__init__(**options)
         self.java_lex = JavaLexer(**options)
-        self.conditional_checker = JmlConditionalChecker()
 
     def get_tokens_unprocessed(self, text: str):
         for (index, kind, value) in self.java_lex.get_tokens_unprocessed(text):
-            if kind == Comment.Single or kind == Comment.Multline:
-                print(kind)
+            if kind == Comment.Single or kind == Comment.Multiline:
                 yield from self.expand_jml(index, kind, value)
             else:
                 yield (index, kind, value)
@@ -34,11 +34,11 @@ class JMLLexer(Lexer):
         #    conditionalChecker.setKeysFromToken(token)
         #    continue
 
-        if not self.conditional_checker.isActive(text):
+        if not self.conditional_checker.is_active(text):
             yield (index, kind, text)
         else:
             start = text.find("@") + 1
-            offset = index + start 
+            offset = index + start
 
             yield (index, Comment.Preproc, text[:start])
 
@@ -69,9 +69,9 @@ class JMLLexer(Lexer):
                 if token.type in TYPE2TYPE:
                     kind = TYPE2TYPE[token.type]
                 else:
-                    kind = TYPE2TYPE[(token.type, toplevel)]
+                    kind = TYPE2TYPE.get((token.type, toplevel), Error)
 
-                if token.type == JML.JML_KEYWORDS_TL_EXPR and toplevel:
+                if token.type == JML.JML_KEYWORDS_TL and toplevel:
                     waitForToplevelSemicolon = True
 
                 yield (offset, kind, token.text)
@@ -92,8 +92,9 @@ TYPE2TYPE = {
     (JML.JML_MODIFIERS, True): Keyword,
     (JML.JML_MODIFIERS, False): Name.Variable,
     (JML.JML_KEYWORDS_TL_EXPR, True): Keyword,
+    (JML.JML_KEYWORDS_TL_EXPR, False): Keyword,
     (JML.JML_KEYWORDS_TL, True): Keyword,
-    (JML.JML_KEYWORDS_TL, True): Name.Variable,
+    (JML.JML_KEYWORDS_TL, False): Name.Variable,
     JML.IDENTIFIER: Name.Variable,
     JML.NUM_LITERALS: Number,
     JML.COMMENT: Comment,
@@ -148,51 +149,48 @@ TYPE2TYPE = {
 
 
 class JmlConditionalChecker:
-    def __init__(self) -> None:
+    def __init__(self, active_keys = None):
         # currently activated keys
-        self.activeKeys: List[str] = []
-        #
+        self.active_keys: List[str] = set(active_keys) if active_keys else list()
         self.cache: Dict[str, bool] = {}
 
-    def isActive(self, text: str) -> bool:
-        if text:
-            atSign = text.find('@')
-            keys = text.strip()[2: atSign]
-            cachedValue = self.cache.get(keys, None)
-            if cachedValue:
-                return cachedValue
+    def is_active(self, text: str) -> bool:
+        at_sign = text.find('@')
+        keys = text.strip()[2: at_sign]
+        cached_value = self.cache.get(keys, None)
+        if cached_value:
+            return cached_value
 
-            conditions = keys.split("/(?=[+-])/")
-            result = self.isActiveForConditions(conditions)
-            self.cache[keys] = result
-            return result
-        return False
+        conditions = keys.split("/(?=[+-])/")
+        result = self.is_active_for_conditions(conditions)
+        self.cache[keys] = result
+        return result
 
-    def isActiveForConditions(self, conditions: List[str]) -> bool:
+    def is_active_for_conditions(self, conditions: List[str]) -> bool:
         # a JML annotation with at least one positive-key is only included
-        plusKeyFound = False
+        plus_key_found = False
         # if at least one of these positive keys is enabled
-        enabledPlusKeyFound = False
+        enabled_plus_key_found = False
 
         # a JML annotation with an enabled negative-key is ignored (even if there are enabled positive-keys).
-        enabledNegativeKeyFound = False
+        enabled_negative_key_found = False
 
         for marker in conditions:
             if marker is None or marker == "":
                 continue
-            isPositive = marker[0] == '+'
-            isNegative = not isPositive
+            is_positive = marker[0] == '+'
+            is_negative = not is_positive
             k = marker[1:].lower()
-            isEnabled = any((x == k for x in self.activeKeys))
-            plusKeyFound = plusKeyFound or isPositive
-            enabledPlusKeyFound = enabledPlusKeyFound or isPositive and isEnabled
-            enabledNegativeKeyFound = enabledNegativeKeyFound or isNegative and isEnabled
+            is_enabled = any((x == k for x in self.active_keys))
+            plus_key_found = plus_key_found or is_positive
+            enabled_plus_key_found = enabled_plus_key_found or is_positive and is_enabled
+            enabled_negative_key_found = enabled_negative_key_found or is_negative and is_enabled
             if "-" == marker or "+" == marker:  # old deprecated conditions
                 return False
 
-        return (not plusKeyFound or enabledPlusKeyFound) and not enabledNegativeKeyFound
+        return (not plus_key_found or enabled_plus_key_found) and not enabled_negative_key_found
 
-    def setKeysFromToken(self, token: Token):
+    def set_keys_from_token(self, token: Token):
         """Given a JML_SET_KEY token, this method sets the active keys for deciding the inclusion of
         conditional JML annotation comments. """
         # JML_SET_KEY: '//-*- jml-keys: ' (IDENTIFIER)* '-*-';
@@ -202,5 +200,5 @@ class JmlConditionalChecker:
         if text:
             content = text.substring(len(prefix), text.length - len(suffix))
             keys = content.split("[ ,]")
-            self.activeKeys = [k.strip().lowercase() for k in keys]
+            self.active_keys = [k.strip().lowercase() for k in keys]
             self.cache.clear()

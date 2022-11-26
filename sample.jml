@@ -1,5 +1,6 @@
 class Test {
     //@ invariant true;
+    //@ invariant invariant;
     // no jml comment
 
     /*@ ensures ensures;

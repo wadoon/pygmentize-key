@@ -247,6 +247,8 @@ fragment JavaLetterOrDigit:
 	~[\u0000-\u007F\uD800-\uDBFF]
 	| // covers UTF-16 surrogate pairs encodings for U+10000 to U+10FFFF
 	[\uD800-\uDBFF] [\uDC00-\uDFFF];
+
+COMMENT_END: '*/';
 ERROR_CHAR: .; //catch errors
 mode comment;
 COMMENT_END_COMMENT: '*/' -> popMode, type(COMMENT);
