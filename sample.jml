@@ -1,0 +1,8 @@
+class Test {
+    //@ invariant true;
+    // no jml comment
+
+    /*@ ensures ensures;
+    */
+    public void foo();
+}
